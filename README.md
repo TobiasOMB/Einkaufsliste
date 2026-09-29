@@ -1,5 +1,7 @@
 # Einkaufsliste – statische Version für GitHub Pages
 
+https://tobiasomb.github.io/Einkaufsliste/
+
 Diese Version läuft **komplett im Browser** (kein Node.js-Server, keine echte Datenbank, kein
 echter Mailversand), damit sie sich direkt über **GitHub Pages** hosten lässt. GitHub Pages kann
 nämlich nur statische Dateien (HTML/CSS/JS) ausliefern, keinen Node.js-Server ausführen.

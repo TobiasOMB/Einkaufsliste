@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin - Einkaufsliste</title>
+<link rel="icon" type="image/png" href="images/favicon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-b">
+<main>
+  <div class="app-card wide">
+    <div class="app-header">
+      <h2>ADMIN-BEREICH</h2>
+      <div class="top-actions">
+        <button type="button" class="pill-btn ghost" id="profile-btn">Profil</button>
+        <button type="button" class="pill-btn orange" id="list-link-btn">MEINE LISTEN</button>
+        <button type="button" class="pill-btn blue" id="logout-btn">LOGOUT</button>
+      </div>
+    </div>
+    <p class="hint">Hier kannst du alle registrierten Benutzer verwalten.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Benutzername</th><th>E-Mail</th><th>Rolle</th><th>Listen</th><th>Aktionen</th></tr>
+        </thead>
+        <tbody id="users-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+<footer class="site-footer">© 2026 Tobias Bobek. Alle Rechte vorbehalten.</footer>
+
+<div id="toast"></div>
+<script src="js/store.js"></script>
+<script src="js/ui.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const admin = requireAdmin();
+    if (!admin) return;
+
+    document.getElementById('logout-btn').addEventListener('click', () => { clearSession(); window.location.href = 'index.html'; });
+    document.getElementById('list-link-btn').addEventListener('click', () => (window.location.href = 'liste.html'));
+    document.getElementById('profile-btn').addEventListener('click', () => openOwnProfileModal(admin));
+
+    renderUsers();
+});
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function renderUsers() {
+    const users = getUsers();
+    const lists = getLists();
+    const me = currentUser();
+    const tbody = document.getElementById('users-tbody');
+    tbody.innerHTML = '';
+
+    users.forEach(u => {
+        const myLists = lists.filter(l => l.members.includes(u.id));
+        const totalItems = myLists.reduce((sum, l) => sum + (l.items || []).length, 0);
+        const sharedCount = myLists.filter(l => l.members.length > 1).length;
+        const isSelf = me && me.id === u.id;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="uname"></td>
+            <td class="uemail"></td>
+            <td><span class="role-badge role-${u.role}">${u.role}</span></td>
+            <td>${myLists.length} Liste(n) · ${totalItems} Artikel${sharedCount ? ' · ' + sharedCount + ' geteilt' : ''}</td>
+            <td class="actions-cell">
+                <button class="action-btn email-btn">E-Mail ändern</button>
+                <button class="action-btn mail-btn">Passwort-Reset senden</button>
+                <button class="action-btn danger del-btn" ${isSelf ? 'disabled' : ''}>Löschen</button>
+            </td>
+        `;
+        tr.querySelector('.uname').textContent = u.username + (isSelf ? ' (du)' : '');
+        tr.querySelector('.uemail').textContent = u.email;
+        tr.querySelector('.email-btn').addEventListener('click', () => changeUserEmail(u.id));
+        tr.querySelector('.mail-btn').addEventListener('click', () => sendResetMail(u.id));
+        if (!isSelf) tr.querySelector('.del-btn').addEventListener('click', () => deleteUser(u.id));
+        tbody.appendChild(tr);
+    });
+}
+
+function changeUserEmail(userId) {
+    const users = getUsers();
+    const user = findUserById(users, userId);
+    if (!user) return;
+
+    openModal({
+        title: 'E-Mail ändern: ' + user.username,
+        bodyHtml: `
+            <div class="field">
+                <label>Neue E-Mail-Adresse</label>
+                <input type="email" id="admin-email-input" value="${escapeHtml(user.email)}">
+            </div>
+        `,
+        confirmLabel: 'Speichern',
+        onConfirm: () => {
+            const newEmail = document.getElementById('admin-email-input').value.trim();
+            if (!isValidEmail(newEmail)) { toast('Bitte eine gültige E-Mail-Adresse angeben.', 'error'); return false; }
+
+            const currentUsers = getUsers();
+            const existing = findUserByEmail(currentUsers, newEmail);
+            if (existing && existing.id !== userId) { toast('Diese E-Mail wird bereits verwendet.', 'error'); return false; }
+
+            const u = findUserById(currentUsers, userId);
+            u.email = newEmail;
+            saveUsers(currentUsers);
+            toast('E-Mail-Adresse aktualisiert.', 'success');
+            renderUsers();
+        }
+    });
+}
+
+function openOwnProfileModal(admin) {
+    changeUserEmail(admin.id);
+}
+
+function sendResetMail(userId) {
+    const users = getUsers();
+    const user = findUserById(users, userId);
+    if (!user) return;
+
+    openModal({
+        title: 'Bist du sicher?',
+        text: 'Passwort-Reset-Link für "' + user.email + '" anzeigen (simuliert)?',
+        confirmLabel: 'Anzeigen',
+        onConfirm: () => {
+            const token = uid();
+            user.resetToken = token;
+            user.resetTokenExpiry = Date.now() + TOKEN_TTL_MS;
+            saveUsers(users);
+            showSimulatedMail(user.email, 'reset-password.html?token=' + token);
+        }
+    });
+}
+
+function deleteUser(userId) {
+    const users = getUsers();
+    const user = findUserById(users, userId);
+    if (!user) return;
+
+    openModal({
+        title: 'Bist du sicher?',
+        text: 'Benutzer "' + user.username + '" wirklich unwiderruflich löschen?',
+        confirmLabel: 'Löschen',
+        danger: true,
+        onConfirm: () => {
+            const removed = deleteUserEverywhere(userId);
+            if (removed) toast('Benutzer "' + removed.username + '" wurde gelöscht.', 'success');
+            renderUsers();
+        }
+    });
+}
+</script>
+</body>
+</html>

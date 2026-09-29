@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Registrierung - Einkaufsliste</title>
+<link rel="icon" type="image/png" href="images/favicon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-a">
+<main>
+  <div class="wrapper">
+    <form id="register-form">
+      <h1>REGISTRIERUNG</h1>
+      <p class="sub">Bitte hier registrieren!</p>
+
+      <div class="input-box">
+        <input type="text" id="reg-username" placeholder="Benutzername" autocomplete="username" required>
+      </div>
+      <div class="input-box">
+        <input type="email" id="reg-email" placeholder="E-Mail-Adresse" autocomplete="email" required>
+      </div>
+      <div class="input-box">
+        <input type="password" id="reg-password" placeholder="Passwort" autocomplete="new-password" required>
+        <button type="button" class="toggle-pw" onclick="toggleFieldType('reg-password', this)" title="Passwort anzeigen">👁️</button>
+      </div>
+      <div class="input-box">
+        <input type="password" id="reg-password2" placeholder="Passwort wiederholen" autocomplete="new-password" required>
+        <button type="button" class="toggle-pw" onclick="toggleFieldType('reg-password2', this)" title="Passwort anzeigen">👁️</button>
+      </div>
+
+      <button type="submit" class="btn btn-white">REGISTRIEREN</button>
+      <div class="links">Schon einen Account? <a href="index.html">Hier anmelden!</a></div>
+    </form>
+  </div>
+</main>
+<footer class="site-footer">© 2026 Tobias Bobek. Alle Rechte vorbehalten.</footer>
+
+<div id="toast"></div>
+<script src="js/store.js"></script>
+<script src="js/ui.js"></script>
+<script>
+document.getElementById('register-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+
+    const username = document.getElementById('reg-username').value.trim();
+    const email = document.getElementById('reg-email').value.trim();
+    const password = document.getElementById('reg-password').value;
+    const password2 = document.getElementById('reg-password2').value;
+
+    if (!username || !email || !password || !password2) { toast('Bitte alle Felder ausfüllen.', 'error'); return; }
+    if (username.length < 3) { toast('Benutzername muss mindestens 3 Zeichen haben.', 'error'); return; }
+    if (!isValidEmail(email)) { toast('Bitte eine gültige E-Mail-Adresse angeben.', 'error'); return; }
+    if (password.length < 6) { toast('Passwort muss mindestens 6 Zeichen haben.', 'error'); return; }
+    if (password !== password2) { toast('Die Passwörter stimmen nicht überein.', 'error'); return; }
+
+    const users = getUsers();
+    if (findUserByUsername(users, username)) { toast('Dieser Benutzername ist bereits vergeben.', 'error'); return; }
+    if (findUserByEmail(users, email)) { toast('Diese E-Mail-Adresse wird bereits verwendet.', 'error'); return; }
+
+    const newUserId = uid();
+    users.push({
+        id: newUserId, username, email, password, role: 'user', listIds: [],
+        resetToken: null, resetTokenExpiry: null, deleteToken: null, deleteTokenExpiry: null,
+        createdAt: new Date().toISOString(),
+    });
+    saveUsers(users);
+    createListForUser(newUserId, 'Meine Liste');
+
+    toast('Registrierung erfolgreich! Du wirst zum Login weitergeleitet.', 'success');
+    setTimeout(() => (window.location.href = 'index.html'), 1400);
+});
+</script>
+</body>
+</html>

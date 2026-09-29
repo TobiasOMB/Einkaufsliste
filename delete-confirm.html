@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Konto löschen - Einkaufsliste</title>
+<link rel="icon" type="image/png" href="images/favicon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-b">
+<main>
+  <div class="wrapper">
+    <h1>KONTO LÖSCHEN</h1>
+    <p class="sub">Wenn du fortfährst, wird das Konto samt aller eigenen Listen <b>unwiderruflich</b> gelöscht.</p>
+    <button type="button" id="confirm-delete-btn" class="btn btn-danger" style="margin-top:20px;">JETZT ENDGÜLTIG LÖSCHEN</button>
+    <div class="links"><a href="index.html">Abbrechen</a></div>
+  </div>
+</main>
+<footer class="site-footer">© 2026 Tobias Bobek. Alle Rechte vorbehalten.</footer>
+
+<div id="toast"></div>
+<script src="js/store.js"></script>
+<script src="js/ui.js"></script>
+<script>
+const params = new URLSearchParams(window.location.search);
+const token = params.get('token');
+const btn = document.getElementById('confirm-delete-btn');
+if (!token) { toast('Ungültiger Link.', 'error'); btn.disabled = true; }
+
+btn.addEventListener('click', () => {
+    const users = getUsers();
+    const idx = users.findIndex(u => u.deleteToken === token);
+    if (idx === -1 || !users[idx].deleteTokenExpiry || users[idx].deleteTokenExpiry < Date.now()) {
+        toast('Der Löschlink ist ungültig oder abgelaufen.', 'error'); return;
+    }
+    const removedId = users[idx].id;
+    deleteUserEverywhere(removedId);
+
+    const session = getSession();
+    if (session && session.userId === removedId) clearSession();
+
+    toast('Dein Konto wurde endgültig gelöscht.', 'success');
+    setTimeout(() => (window.location.href = 'index.html'), 1400);
+});
+</script>
+</body>
+</html>

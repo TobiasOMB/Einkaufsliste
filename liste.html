@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Einkaufsliste</title>
+<link rel="icon" type="image/png" href="images/favicon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-a">
+<main>
+  <div class="app-card wide">
+    <div class="app-header">
+      <h2>EINKAUFSLISTE</h2>
+      <div class="top-actions">
+        <span class="who" id="welcome"></span>
+        <button type="button" class="pill-btn ghost" id="profile-btn">Profil</button>
+        <button type="button" class="pill-btn purple" id="admin-btn" style="display:none;">ADMIN</button>
+        <button type="button" class="pill-btn blue" id="logout-btn">LOGOUT</button>
+      </div>
+    </div>
+
+    <div class="lists-bar" id="lists-bar"></div>
+
+    <div id="list-content"></div>
+
+    <div class="danger-zone">
+      <button type="button" class="delete-account-btn" id="delete-account-btn">Konto löschen</button>
+    </div>
+  </div>
+</main>
+<footer class="site-footer">© 2026 Tobias Bobek. Alle Rechte vorbehalten.</footer>
+
+<div id="toast"></div>
+
+<script src="js/store.js"></script>
+<script src="js/ui.js"></script>
+<script>
+let activeListId = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+    const user = requireLogin();
+    if (!user) return;
+
+    document.getElementById('welcome').textContent = 'Hallo, ' + user.username;
+    if (user.role === 'admin') {
+        const btn = document.getElementById('admin-btn');
+        btn.style.display = 'inline-flex';
+        btn.addEventListener('click', () => (window.location.href = 'admin.html'));
+    }
+    document.getElementById('logout-btn').addEventListener('click', () => { clearSession(); window.location.href = 'index.html'; });
+    document.getElementById('profile-btn').addEventListener('click', openProfileModal);
+    document.getElementById('delete-account-btn').addEventListener('click', requestAccountDeletion);
+
+    renderAll();
+});
+
+function renderAll() {
+    const user = currentUser();
+    if (!user) return;
+    const myLists = listsForUser(user.id);
+
+    // aktive Liste bestimmen (falls noch keine gewählt oder die alte nicht mehr existiert)
+    if (!activeListId || !myLists.some(l => l.id === activeListId)) {
+        activeListId = myLists[0] ? myLists[0].id : null;
+    }
+
+    renderTabs(myLists);
+    renderContent();
+}
+
+function renderTabs(myLists) {
+    const bar = document.getElementById('lists-bar');
+    bar.innerHTML = '';
+    const user = currentUser();
+
+    myLists.forEach(list => {
+        const tab = document.createElement('button');
+        tab.type = 'button';
+        tab.className = 'list-tab' + (list.id === activeListId ? ' active' : '');
+        tab.innerHTML = '<span class="name"></span>' + (list.members.length > 1 ? '<span class="shared-mark">👥 ' + list.members.length + '</span>' : '');
+        tab.querySelector('.name').textContent = list.name;
+        tab.addEventListener('click', () => { activeListId = list.id; renderAll(); });
+        bar.appendChild(tab);
+    });
+
+    const newBtn = document.createElement('button');
+    newBtn.type = 'button';
+    newBtn.className = 'list-tab-new';
+    newBtn.textContent = '+ Neue Liste';
+    newBtn.addEventListener('click', () => {
+        const name = prompt('Name der neuen Liste:', 'Neue Liste');
+        if (name === null) return;
+        const list = createListForUser(user.id, name.trim() || 'Neue Liste');
+        activeListId = list.id;
+        renderAll();
+    });
+    bar.appendChild(newBtn);
+}
+
+function renderContent() {
+    const container = document.getElementById('list-content');
+    const user = currentUser();
+
+    if (!activeListId) {
+        container.innerHTML = '<div class="empty-state">Du hast noch keine Liste. Klicke oben auf "+ Neue Liste", um loszulegen.</div>';
+        return;
+    }
+
+    const lists = getLists();
+    const list = findListById(lists, activeListId);
+    if (!list) { activeListId = null; renderAll(); return; }
+
+    container.innerHTML = `
+        <div class="add-row">
+            <input type="text" id="item-input" placeholder="Produkt hinzufügen">
+            <input type="number" id="qty-input" placeholder="Menge" min="1" value="1">
+            <button type="button" id="add-item-btn">Hinzufügen</button>
+        </div>
+        <ul id="list-items"></ul>
+        <div class="share-box">
+            <div class="title">"${escapeHtml(list.name)}" teilen</div>
+            <div class="chips" id="members-chips"></div>
+            <div class="share-form">
+                <input type="email" id="share-email" placeholder="E-Mail des anderen Users">
+                <button type="button" id="share-btn">Einladen</button>
+            </div>
+        </div>
+    `;
+
+    renderItems(list);
+    renderMembers(list, user.id);
+
+    document.getElementById('add-item-btn').addEventListener('click', addItem);
+    document.getElementById('item-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') addItem(); });
+    document.getElementById('qty-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') addItem(); });
+    document.getElementById('share-btn').addEventListener('click', shareActiveList);
+    document.getElementById('share-email').addEventListener('keydown', (e) => { if (e.key === 'Enter') shareActiveList(); });
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function renderItems(list) {
+    const ul = document.getElementById('list-items');
+    ul.innerHTML = '';
+    const items = list.items || [];
+
+    if (!items.length) {
+        ul.innerHTML = '<li style="border:none;justify-content:center;opacity:0.65;">Noch keine Artikel – füge oben etwas hinzu.</li>';
+        return;
+    }
+
+    items.forEach(item => {
+        const li = document.createElement('li');
+        if (item.checked) li.classList.add('checked');
+
+        const dot = document.createElement('div');
+        dot.className = 'check-dot';
+        dot.textContent = item.checked ? '✓' : '';
+        dot.addEventListener('click', () => toggleItem(list.id, item.id));
+
+        const textWrap = document.createElement('div');
+        textWrap.className = 'item-text';
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'name';
+        nameSpan.textContent = item.item;
+        const qtySpan = document.createElement('span');
+        qtySpan.className = 'qty';
+        qtySpan.textContent = 'Menge: ' + item.quantity;
+        textWrap.appendChild(nameSpan);
+        textWrap.appendChild(qtySpan);
+        textWrap.addEventListener('click', () => toggleItem(list.id, item.id));
+
+        const actions = document.createElement('div');
+        actions.className = 'row-actions';
+
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'icon-btn edit';
+        editBtn.title = 'Bearbeiten';
+        editBtn.textContent = '✎';
+        editBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            startEditItem(list.id, item, li);
+        });
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'icon-btn del';
+        delBtn.title = 'Löschen';
+        delBtn.textContent = '×';
+        delBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            deleteItem(list.id, item.id);
+        });
+
+        actions.appendChild(editBtn);
+        actions.appendChild(delBtn);
+
+        li.appendChild(dot);
+        li.appendChild(textWrap);
+        li.appendChild(actions);
+        ul.appendChild(li);
+    });
+}
+
+function startEditItem(listId, item, li) {
+    li.innerHTML = '';
+    li.classList.remove('checked');
+
+    const editRow = document.createElement('div');
+    editRow.className = 'item-edit-row';
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = item.item;
+
+    const qtyInput = document.createElement('input');
+    qtyInput.type = 'number';
+    qtyInput.min = '1';
+    qtyInput.value = item.quantity;
+
+    editRow.appendChild(nameInput);
+    editRow.appendChild(qtyInput);
+
+    const actions = document.createElement('div');
+    actions.className = 'row-actions';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'icon-btn edit';
+    saveBtn.title = 'Speichern';
+    saveBtn.textContent = '✓';
+    saveBtn.addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const newName = nameInput.value.trim();
+        const newQty = Number(qtyInput.value) > 0 ? Number(qtyInput.value) : item.quantity;
+        if (!newName) { toast('Der Produktname darf nicht leer sein.', 'error'); return; }
+        saveItemEdit(listId, item.id, newName, newQty);
+    });
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'icon-btn del';
+    cancelBtn.title = 'Abbrechen';
+    cancelBtn.textContent = '×';
+    cancelBtn.addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        renderContent();
+    });
+
+    actions.appendChild(saveBtn);
+    actions.appendChild(cancelBtn);
+
+    li.appendChild(editRow);
+    li.appendChild(actions);
+    nameInput.focus();
+}
+
+function saveItemEdit(listId, itemId, newName, newQty) {
+    const lists = getLists();
+    const list = findListById(lists, listId);
+    const entry = (list.items || []).find(i => i.id === itemId);
+    if (!entry) return;
+    entry.item = newName;
+    entry.quantity = newQty;
+    saveLists(lists);
+    renderContent();
+}
+
+function addItem() {
+    const input = document.getElementById('item-input');
+    const qtyInput = document.getElementById('qty-input');
+    const value = input.value.trim();
+    const qty = Number(qtyInput.value) > 0 ? Number(qtyInput.value) : 1;
+    if (!value) { toast('Bitte ein Produkt angeben!', 'error'); return; }
+
+    const lists = getLists();
+    const list = findListById(lists, activeListId);
+    list.items = list.items || [];
+    list.items.push({ id: uid(), item: value, quantity: qty, checked: false });
+    saveLists(lists);
+
+    input.value = ''; qtyInput.value = '1'; input.focus();
+    renderItems(list);
+}
+
+function toggleItem(listId, itemId) {
+    const lists = getLists();
+    const list = findListById(lists, listId);
+    const entry = (list.items || []).find(i => i.id === itemId);
+    if (!entry) return;
+    entry.checked = !entry.checked;
+    saveLists(lists);
+    renderItems(list);
+}
+
+function deleteItem(listId, itemId) {
+    const lists = getLists();
+    const list = findListById(lists, listId);
+    list.items = (list.items || []).filter(i => i.id !== itemId);
+    saveLists(lists);
+    renderItems(list);
+}
+
+function renderMembers(list, selfId) {
+    const box = document.getElementById('members-chips');
+    box.innerHTML = '';
+    const users = getUsers();
+
+    list.members.forEach(memberId => {
+        const m = findUserById(users, memberId);
+        if (!m) return;
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+        const label = document.createElement('span');
+        label.textContent = m.id === selfId ? m.username + ' (du)' : m.username;
+        chip.appendChild(label);
+
+        if (list.members.length > 1) {
+            const x = document.createElement('span');
+            x.className = 'x';
+            x.textContent = '×';
+            x.title = m.id === selfId ? 'Liste verlassen' : 'Entfernen';
+            x.addEventListener('click', () => removeMemberFromActiveList(m.id, m.id === selfId));
+            chip.appendChild(x);
+        }
+        box.appendChild(chip);
+    });
+}
+
+function shareActiveList() {
+    const input = document.getElementById('share-email');
+    const email = input.value.trim();
+    if (!email) { toast('Bitte E-Mail-Adresse angeben.', 'error'); return; }
+
+    const users = getUsers();
+    const lists = getLists();
+    const list = findListById(lists, activeListId);
+    const target = findUserByEmail(users, email);
+    const me = currentUser();
+
+    if (!target) { toast('Kein Benutzer mit dieser E-Mail-Adresse gefunden.', 'error'); return; }
+    if (target.id === me.id) { toast('Du kannst dich nicht selbst einladen.', 'error'); return; }
+    if (list.members.includes(target.id)) { toast(target.username + ' hat bereits Zugriff auf diese Liste.', 'error'); return; }
+
+    list.members.push(target.id);
+    target.listIds = target.listIds || [];
+    target.listIds.push(list.id);
+
+    saveLists(lists);
+    saveUsers(users);
+
+    input.value = '';
+    toast(target.username + ' hat jetzt Zugriff auf "' + list.name + '".', 'success');
+    renderContent();
+}
+
+function removeMemberFromActiveList(userId, isSelf) {
+    openModal({
+        title: 'Bist du sicher?',
+        text: isSelf ? 'Du verlässt diese Liste. Sie bleibt für die anderen Mitglieder bestehen.' : 'Dieses Mitglied wird aus der Liste entfernt.',
+        confirmLabel: 'Ja',
+        danger: true,
+        onConfirm: () => {
+            removeUserFromList(activeListId, userId);
+            if (isSelf) activeListId = null;
+            toast(isSelf ? 'Liste verlassen.' : 'Mitglied entfernt.', 'success');
+            renderAll();
+        }
+    });
+}
+
+/* ---------------- Profil: eigene E-Mail ändern ---------------- */
+function openProfileModal() {
+    const user = currentUser();
+    openModal({
+        title: 'Profil bearbeiten',
+        bodyHtml: `
+            <div class="field">
+                <label>Benutzername</label>
+                <input type="text" value="${escapeHtml(user.username)}" disabled>
+            </div>
+            <div class="field">
+                <label>E-Mail-Adresse</label>
+                <input type="email" id="profile-email-input" value="${escapeHtml(user.email)}">
+            </div>
+        `,
+        confirmLabel: 'Speichern',
+        onConfirm: () => {
+            const newEmail = document.getElementById('profile-email-input').value.trim();
+            if (!isValidEmail(newEmail)) { toast('Bitte eine gültige E-Mail-Adresse angeben.', 'error'); return false; }
+
+            const users = getUsers();
+            const existing = findUserByEmail(users, newEmail);
+            if (existing && existing.id !== user.id) { toast('Diese E-Mail wird bereits von einem anderen Konto verwendet.', 'error'); return false; }
+
+            const me = findUserById(users, user.id);
+            me.email = newEmail;
+            saveUsers(users);
+            toast('E-Mail-Adresse aktualisiert.', 'success');
+        }
+    });
+}
+
+/* ---------------- Konto löschen ---------------- */
+function requestAccountDeletion() {
+    const user = currentUser();
+    openModal({
+        title: 'Konto wirklich löschen?',
+        text: 'Wir zeigen dir (simuliert) eine Bestätigungsmail mit Löschlink. Fortfahren?',
+        confirmLabel: 'Ja, weiter',
+        danger: true,
+        onConfirm: () => {
+            const users = getUsers();
+            const me = findUserById(users, user.id);
+            const token = uid();
+            me.deleteToken = token;
+            me.deleteTokenExpiry = Date.now() + TOKEN_TTL_MS;
+            saveUsers(users);
+            showSimulatedMail(me.email, 'delete-confirm.html?token=' + token);
+        }
+    });
+}
+</script>
+</body>
+</html>

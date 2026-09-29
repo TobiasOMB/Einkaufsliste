@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Login - Einkaufsliste</title>
+<link rel="icon" type="image/png" href="images/favicon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-b">
+<main>
+  <div class="wrapper">
+    <form id="login-form">
+      <h1>LOGIN</h1>
+      <div class="input-box">
+        <input type="text" id="login-username" placeholder="Benutzername" autocomplete="username" required>
+      </div>
+      <div class="input-box">
+        <input type="password" id="login-password" placeholder="Passwort" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn">LOGIN</button>
+      <div class="links">
+        <div><a href="forgot-password.html">Passwort vergessen?</a></div>
+        <div>Kein Account? <a href="register.html">Hier registrieren!</a></div>
+      </div>
+      <p class="demo-note">Demo-Admin zum Ausprobieren: <b>Admin</b> / <b>admin123</b></p>
+    </form>
+  </div>
+</main>
+<footer class="site-footer">© 2026 Tobias Bobek. Alle Rechte vorbehalten.</footer>
+
+<div id="toast"></div>
+<script src="js/store.js"></script>
+<script src="js/ui.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    if (currentUser()) {
+        window.location.href = currentUser().role === 'admin' ? 'admin.html' : 'liste.html';
+        return;
+    }
+
+    document.getElementById('login-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const username = document.getElementById('login-username').value.trim();
+        const password = document.getElementById('login-password').value;
+
+        if (!username || !password) { toast('Bitte Benutzername und Passwort angeben.', 'error'); return; }
+
+        const users = getUsers();
+        const user = findUserByUsername(users, username);
+        if (!user || user.password !== password) { toast('Benutzername oder Passwort ist falsch.', 'error'); return; }
+
+        setSession(user.id);
+        window.location.href = user.role === 'admin' ? 'admin.html' : 'liste.html';
+    });
+});
+</script>
+</body>
+</html>

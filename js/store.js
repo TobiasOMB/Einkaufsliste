@@ -65,7 +65,7 @@ function seedIfEmpty() {
         id: adminId,
         username: 'Admin',
         email: 'admin@example.com',
-        password: 'admin123',
+        password: 'furtz',
         role: 'admin',
         listIds: [list.id],
         resetToken: null, resetTokenExpiry: null,
